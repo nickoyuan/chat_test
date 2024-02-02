@@ -1,0 +1,302 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_app/bloc/chatBloc/chat_bloc.dart';
+import 'package:flutter_app/bloc/chatBloc/chat_event.dart';
+import 'package:flutter_app/utils/colors.dart';
+import 'package:flutter_app/utils/custom_fonts.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+
+import '../../bloc/chatBloc/chat_state.dart';
+import '../../model/chat_type.dart';
+import '../../model/conversation_list.dart';
+import '../../utils/utility.dart';
+
+class Message extends StatefulWidget {
+  final ConversationModel conversationModel;
+
+  const Message(this.conversationModel);
+
+  @override
+  _MessageState createState() => _MessageState();
+}
+
+List<DocumentSnapshot> listMessage = new List.from([]);
+
+class _MessageState extends State<Message> {
+  final TextEditingController _textEditingController = new TextEditingController();
+  final ScrollController listScrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    BlocProvider.of<ChatBloc>(context).add(
+        new InitializeChatRoomEvent(conversationModel: widget.conversationModel));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final deviceHeight = MediaQuery.of(context).size.height;
+    final deviceWidth = MediaQuery.of(context).size.width;
+
+    final userImage = InkWell(
+      child: Hero(
+        tag: 'assets/images/woman1.jpg',
+        child: Container(
+          margin: EdgeInsets.only(right: 8.0, bottom: 10.0),
+          height: 50.0,
+          width: 50.0,
+          decoration: BoxDecoration(
+            image: DecorationImage(
+              image: AssetImage('assets/images/woman1.jpg'),
+              fit: BoxFit.cover,
+            ),
+            shape: BoxShape.circle,
+          ),
+        ),
+      ),
+    );
+
+    final userName = Hero(
+      tag: "cuteea",
+      child: Text(
+        widget.conversationModel.swiped_user_profile_name,
+        style: TextStyle(
+          fontSize: 20.0,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
+
+    final appBar = Material(
+      elevation: 5.0,
+      shadowColor: Colors.grey,
+      child: Container(
+        padding: EdgeInsets.only(left: 20.0, right: 20.0, top: 30.0),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: <Widget>[
+            IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: Icon(Icons.arrow_back),
+            ),
+            userName,
+            userImage
+          ],
+        ),
+      ),
+    );
+
+    final inputBox = Positioned(
+      bottom: 0,
+      left: 0,
+      right: 0,
+      child: Container(
+        height: 60.0,
+        width: deviceHeight,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade200,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: <Widget>[
+            IconButton(
+              onPressed: () {},
+              icon: Icon(
+                Icons.camera_alt,
+                color: Colors.grey,
+              ),
+              iconSize: 32.0,
+            ),
+            Container(
+              padding: EdgeInsets.only(left: 10.0),
+              height: 47.0,
+              width: deviceWidth * 0.7,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8.0),
+                color: Colors.white,
+              ),
+              child: TextField(
+                autofocus: true,
+                controller: _textEditingController,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  hintText: 'Type a message...',
+                  hintStyle: TextStyle(
+                    color: Colors.grey.withOpacity(0.6),
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            IconButton(
+              onPressed: () {
+                BlocProvider.of<ChatBloc>(context).add(
+                    new SendMessageEvent(
+                        conversationModel: widget.conversationModel,
+                        chatType: ChatType.MESSAGE,
+                        message: _textEditingController.text
+                    )
+                );
+                if (_textEditingController.text.trim() != '') {
+                  _textEditingController.clear();
+                }
+              },
+              icon: Icon(
+                Icons.send,
+                color: Colors.grey,
+              ),
+              iconSize: 32.0,
+            ),
+          ],
+        ),
+      ),
+    );
+
+    return Scaffold(
+      body: Stack(
+        children: <Widget>[
+          Container(
+            height: deviceHeight,
+            width: deviceWidth,
+            child: Column(
+              children: <Widget>[
+                appBar,
+                showListMessage(context, listScrollController)
+              ],
+            ),
+          ),
+          inputBox
+        ],
+      ),
+    );
+  }
+}
+
+Widget showListMessage(BuildContext context, ScrollController listScrollController) {
+  return BlocBuilder<ChatBloc, ChatState>(
+    buildWhen: (previous, current) => previous != current,
+    builder: (context, state) {
+      switch (state.runtimeType) {
+        case Loading:
+          // Handle the initial state
+          return loadingSpinner("wtf");
+        case Success:
+          return buildChat(
+              (state as Success).chatStream, (state).idFrom, listScrollController);
+        case Error:
+          return Text("unkown");
+        default:
+          return Text("unkown");
+      }
+    },
+  );
+}
+
+Widget buildChat(Stream<QuerySnapshot> chatStream, String idFrom,
+    ScrollController listScrollController) {
+  return Flexible(
+      child: StreamBuilder<QuerySnapshot>(
+    stream: chatStream,
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return Container(
+          width: 0,
+          height: 0,
+        );
+      }
+      if (snapshot.connectionState == ConnectionState.active) {
+        if (snapshot.data != null) {
+          if (snapshot.data!.docs.length > 0) {
+            listMessage.addAll(snapshot.data!.docs);
+            return ListView.builder(
+              itemBuilder: (context, index) {
+                if (idFrom == snapshot.data!.docs[index]['idFrom']) {
+                  return buildReceiveMessage(index, snapshot.data!.docs[index]);
+                } else {
+                  return buildSendMessage(index, snapshot.data!.docs[index]);
+                }
+              },
+              itemCount: snapshot.data!.docs.length,
+              reverse: true,
+              controller: listScrollController,
+            );
+          }
+        } else {
+          return Container(
+            width: 0,
+            height: 0,
+          );
+        }
+      }
+      return Container(
+        width: 0,
+        height: 0,
+      );
+    },
+  ));
+}
+
+bool isLastMessageRight(int index) {
+  if (index == 0) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
+Widget buildReceiveMessage(int index, DocumentSnapshot document) {
+  return Row(
+    children: <Widget>[
+      Container(
+        child: Text(
+          document.get('content'),
+          style: kChatMessageStyle,
+        ),
+        padding: EdgeInsets.fromLTRB(20.0, 10.0, 15.0, 10.0),
+        width: 200.0,
+        decoration: BoxDecoration(
+            color: Colors.grey[500], borderRadius: BorderRadius.circular(8.0)),
+        margin: EdgeInsets.only(
+            bottom: isLastMessageRight(index) ? 80 : 10.0, left: 10.0),
+      )
+    ],
+    mainAxisAlignment: MainAxisAlignment.start,
+  );
+}
+
+Widget buildSendMessage(int index, DocumentSnapshot document) {
+  return Row(
+    children: <Widget>[
+      Container(
+        child: Text(
+          document.get('content'),
+          style: kChatMessageStyle,
+        ),
+        padding: EdgeInsets.fromLTRB(20.0, 10.0, 15.0, 10.0),
+        width: 200.0,
+        decoration: BoxDecoration(
+            color: primaryColor, borderRadius: BorderRadius.circular(8.0)),
+        margin: EdgeInsets.only(
+            bottom: isLastMessageRight(index) ? 80 : 10.0, right: 10.0),
+      )
+    ],
+    mainAxisAlignment: MainAxisAlignment.end,
+  );
+}
+
+Future<Null> _ensureLoggedIn() async {
+//  GoogleSignInAccount signedInUser = googleSignIn.currentUser;
+//  if (signedInUser == null)
+//    signedInUser = await googleSignIn.signInSilently();
+//  if (signedInUser == null) {
+//    await googleSignIn.signIn();
+//   }
+}
+
+Future _signOut() async {
+//  await auth.signOut();
+//  googleSignIn.signOut();
+//  Scaffold
+//      .of(_scaffoldContext)
+//      .showSnackBar(new SnackBar(content: new Text('User logged out')));
+}
