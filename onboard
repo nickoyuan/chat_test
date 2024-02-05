@@ -1,0 +1,679 @@
+import 'dart:io';
+
+import 'package:dropdown_search/dropdown_search.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_app/bloc/profile/profile_state.dart';
+import 'package:flutter_app/utils/custom_fonts.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../../bloc/profile/profile_bloc.dart';
+import '../../../bloc/profile/profile_event.dart';
+import '../../../utils/candidate_utils.dart';
+import '../../../utils/colors.dart';
+import '../../home.dart';
+
+class ProfileCreation extends StatefulWidget {
+  @override
+  State<StatefulWidget> createState() => _ProfileCreation();
+}
+
+class _ProfileCreation extends State<ProfileCreation> {
+  final int _numPages = 7;
+  final PageController _pageController = PageController(initialPage: 0);
+  final TextEditingController nameController = TextEditingController();
+  int _currentPage = 0;
+  var _nameForm = GlobalKey<FormState>();
+  final ImagePicker _picker = ImagePicker();
+  String selectedPersonality = enumToString(PersonalityMBTI.INTP);
+  String selectedLoveLanguage = enumToString(LoveLanguage.Act_of_service);
+  final TextEditingController promptOne = TextEditingController();
+  final TextEditingController promptTwo = TextEditingController();
+  XFile? _selectedImageOne;
+  DateTime selectedDateOfBirth = DateTime.now();
+  final List<bool> _selectedGender = <bool>[true, false, false];
+  final List<bool> _selectedGenderPreference = <bool>[true, false, false];
+  List<String> genders = ["Male", "Female", "Non Binary"];
+  List<String> genderPreference = ["Men", "Women", "Men & Women"];
+
+  bool checkValidation() {
+    if (nameController.text.isNotEmpty && _selectedImageOne != null) {
+      return true;
+    } else {
+      return false;
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    XFile? selected = await _picker.pickImage(source: source);
+    setState(() {
+      _selectedImageOne = selected;
+    });
+  }
+
+  List<Widget> _buildPageIndicator() {
+    List<Widget> list = [];
+    for (int i = 0; i < _numPages; i++) {
+      list.add(i == _currentPage ? _indicator(true) : _indicator(false));
+    }
+    return list;
+  }
+
+  Widget _indicator(bool isActive) {
+    return AnimatedContainer(
+      duration: Duration(milliseconds: 150),
+      margin: EdgeInsets.symmetric(horizontal: 8.0),
+      height: 8.0,
+      width: isActive ? 24.0 : 16.0,
+      decoration: BoxDecoration(
+        color: isActive ? Colors.white : Color(0xFF7B51D3),
+        borderRadius: BorderRadius.all(Radius.circular(12)),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: BlocListener<ProfileBloc, ProfileState>(
+          listener: (context, state) {
+            if (state is Loading) {
+              // Use showDialog or another approach to display CircularProgressIndicator
+              showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return Center(child: CircularProgressIndicator());
+                },
+              );
+            } else if (state is ProfileCreationSuccessState) {
+              Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => Home()),
+                  (Route<dynamic> route) => false);
+            } else {
+              // Cancel loading dialog
+              Navigator.pop(context);
+
+              // Show an error toast
+              Fluttertoast.showToast(
+                msg: "Network issue, please try again later",
+                toastLength: Toast.LENGTH_SHORT,
+                gravity: ToastGravity.CENTER,
+                timeInSecForIosWeb: 1,
+                backgroundColor: Colors.red,
+                textColor: Colors.white,
+              );
+            }
+          },
+          child: buildAnnotatedRegion()),
+      bottomSheet: _currentPage == _numPages - 1 ? getStartedButton() : Text(''),
+    );
+  }
+
+  /*
+   decoration: BoxDecoration(
+            gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                stops: [0.1, 0.4, 0.7, 0.9],
+                colors: pink_onboard_color)
+        )
+        pink color
+   */
+  AnnotatedRegion<SystemUiOverlayStyle> buildAnnotatedRegion() {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light,
+      child: Container(
+        color: primaryColor,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 40.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Container(
+                height: 600.0,
+                child: PageView(
+                  physics: ClampingScrollPhysics(), //NeverScrollableScrollPhysics()
+                  controller: _pageController,
+                  onPageChanged: (int page) {
+                    setState(() {
+                      _currentPage = page;
+                    });
+                  },
+                  children: <Widget>[
+                    personalityMBT(),
+                    loveLanguage(),
+                    welcomeScreen(),
+                    nickName(),
+                    dateOfBirth(),
+                    genderSelection(),
+                    displayPicture(),
+                    // questionnaire()
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: _buildPageIndicator(),
+              ),
+              _currentPage != _numPages - 1 ? nextButton() : Text(''),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Padding welcomeScreen() {
+    return Padding(
+      padding: EdgeInsets.all(40.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Center(
+            child: SvgPicture.asset(
+              "assets/images/social.svg",
+              height: 300,
+              width: 300,
+            ),
+          ),
+          SizedBox(
+            height: 30,
+          ),
+          Text(
+            "Very nice, $selectedPersonality and $selectedLoveLanguage",
+            style: kTitleStyle,
+          ),
+          SizedBox(
+            height: 15,
+          ),
+          Text(
+            "Now let's fill out rest of your profile, should be quick",
+            style: kSubtitleStyle,
+          )
+        ],
+      ),
+    );
+  }
+
+  Container getStartedButton() {
+    return Container(
+      height: 100.0,
+      width: double.infinity,
+      color: Colors.white,
+      child: GestureDetector(
+        onTap: () {
+          if (checkValidation()) {
+            BlocProvider.of<ProfileBloc>(context).add(ProfileCreationEvent(
+              selectedPersonality: selectedPersonality,
+              selectedLoveLanguage: selectedLoveLanguage,
+              firstName: nameController.text,
+              selectedDateOfBirth: selectedDateOfBirth,
+              selectedGender: getGenderFromList(_selectedGender, genders),
+              selectedGenderPreference:
+                  getGenderFromList(_selectedGenderPreference, genderPreference),
+              selectedImageOne: _selectedImageOne!,
+            ));
+          }
+        },
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.only(bottom: 30.0),
+            child: Text(
+              'Get started',
+              style: TextStyle(
+                color: Color(0xFF5B16D0),
+                fontSize: 20.0,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Expanded nextButton() {
+    return Expanded(
+        child: Align(
+            alignment: FractionalOffset.bottomRight,
+            child: TextButton(
+              onPressed: () {
+                pageNav();
+              },
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    "Next",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 22.0,
+                    ),
+                  ),
+                  SizedBox(width: 10.0),
+                  Icon(
+                    Icons.arrow_forward,
+                    color: Colors.white,
+                    size: 30.0,
+                  ),
+                ],
+              ),
+            )));
+  }
+
+  void pageNav() {
+    if (_currentPage == 0 && _nameForm.currentState!.validate()) {
+      _pageController.nextPage(
+        duration: Duration(milliseconds: 500),
+        curve: Curves.ease,
+      );
+    } else if (_currentPage == 1 && (_selectedImageOne != null)) {
+      _pageController.nextPage(
+        duration: Duration(milliseconds: 500),
+        curve: Curves.ease,
+      );
+    } else if (_currentPage == 2 && selectedPersonality.isNotEmpty) {
+      _pageController.nextPage(
+        duration: Duration(milliseconds: 500),
+        curve: Curves.ease,
+      );
+    }
+  }
+
+  Padding genderSelection() {
+    return Padding(
+      padding: EdgeInsets.all(40.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            "I am a...",
+            style: kTitleStyle,
+          ),
+          SizedBox(
+            height: 20,
+          ),
+          ToggleButtons(
+              direction: Axis.horizontal,
+              onPressed: (int index) {
+                setState(() {
+                  // The button that is tapped is set to true, and the others to false.
+                  for (int i = 0; i < _selectedGender.length; i++) {
+                    _selectedGender[i] = i == index;
+                  }
+                });
+              },
+              borderRadius: const BorderRadius.all(Radius.circular(8)),
+              selectedBorderColor: Colors.black,
+              selectedColor: Colors.black,
+              fillColor: Colors.grey,
+              color: Colors.white,
+              constraints: const BoxConstraints(
+                minHeight: 40.0,
+                minWidth: 80.0,
+              ),
+              isSelected: _selectedGender,
+              children: genders.map((gender) => Text(gender)).toList()),
+          SizedBox(
+            height: 50,
+          ),
+          Text(
+            "Who is interested in...",
+            style: kTitleStyle,
+          ),
+          SizedBox(
+            height: 20,
+          ),
+          ToggleButtons(
+            direction: Axis.horizontal,
+            onPressed: (int index) {
+              setState(() {
+                // The button that is tapped is set to true, and the others to false.
+                for (int i = 0; i < _selectedGenderPreference.length; i++) {
+                  _selectedGenderPreference[i] = i == index;
+                }
+              });
+            },
+            borderRadius: const BorderRadius.all(Radius.circular(8)),
+            selectedBorderColor: Colors.black,
+            selectedColor: Colors.black,
+            fillColor: Colors.grey,
+            color: Colors.white,
+            constraints: const BoxConstraints(
+              minHeight: 40.0,
+              minWidth: 80.0,
+            ),
+            isSelected: _selectedGenderPreference,
+            children:
+                genders.map((genderPreference) => Text(genderPreference)).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Padding dateOfBirth() {
+    return Padding(
+      padding: EdgeInsets.all(40.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            "What's your date of birth?",
+            style: kTitleStyle,
+          ),
+          SizedBox(
+            height: 50,
+          ),
+          SizedBox(
+            height: 200,
+            child: CupertinoDatePicker(
+              mode: CupertinoDatePickerMode.date,
+              initialDateTime: DateTime(DateTime.now().year - 18, 1, 1),
+              maximumDate: DateTime(DateTime.now().year - 18, 1, 1),
+              onDateTimeChanged: (DateTime newDateTime) {
+                setState(() {
+                  selectedDateOfBirth = newDateTime;
+                });
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Padding nickName() {
+    return Padding(
+      padding: EdgeInsets.all(40.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            "Enter your name",
+            style: kTitleStyle,
+          ),
+          SizedBox(
+            height: 15,
+          ),
+          Text(
+            "What should people call you?",
+            style: kSubtitleStyle,
+          ),
+          SizedBox(
+            height: 50,
+          ),
+          Form(
+            key: _nameForm,
+            autovalidateMode: AutovalidateMode.onUserInteraction,
+            child: Column(
+              children: <Widget>[
+                TextFormField(
+                    controller: nameController,
+                    decoration: InputDecoration(
+                        errorStyle: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.red,
+                            fontSize: 15),
+                        hintText: 'Type your name here'),
+                    validator: (val) {
+                      if (val!.isEmpty) return 'name must not be empty';
+                      return null;
+                    }),
+              ],
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  Padding displayPicture() {
+    return Padding(
+      padding: EdgeInsets.all(40.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            "Let's add a profile photo",
+            style: kTitleStyle,
+          ),
+          SizedBox(
+            height: 15,
+          ),
+          Text(
+            "A cleaner photo gets more matches, you can change it later",
+            style: kSubtitleStyle,
+          ),
+          SizedBox(
+            height: 100,
+          ),
+          if (_selectedImageOne != null) ...[
+            Center(
+              child: Stack(
+                children: [
+                  SizedBox(
+                    width: 250,
+                    height: 250,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(100),
+                      child: Image.file(
+                        File(_selectedImageOne!.path),
+                        fit: BoxFit.fill,
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: () {
+                        _pickImage(ImageSource.gallery);
+                      },
+                      child: Container(
+                        width: 35,
+                        height: 35,
+                        decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(100),
+                            color: Colors.grey),
+                        child: const Icon(
+                          Icons.edit,
+                          color: Colors.black,
+                          size: 20,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            Center(
+              child: GestureDetector(
+                onTap: () {
+                  _pickImage(ImageSource.gallery);
+                },
+                child: CircleAvatar(
+                  backgroundColor: Colors.white,
+                  radius: 50,
+                  child: Icon(Icons.add),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Padding loveLanguage() {
+    return Padding(
+      padding: EdgeInsets.all(40.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Center(
+            child: SvgPicture.asset(
+              "assets/images/world.svg",
+              height: 300,
+              width: 300,
+            ),
+          ),
+          SizedBox(
+            height: 30,
+          ),
+          Text(
+            "What is your dominant love language?",
+            style: kSubtitleStyle,
+          ),
+          SizedBox(
+            height: 15,
+          ),
+          DropdownSearch<String>(
+              popupProps: PopupPropsMultiSelection.menu(
+                showSelectedItems: true,
+              ),
+              // dropdownSearchDecoration: InputDecoration(
+              //   labelText: "Love Language",
+              // ),
+              items: enumValuesToStringList(LoveLanguage.values),
+              onChanged: (String? data) => {
+                    if (data != null) {selectedLoveLanguage = data}
+                  },
+              selectedItem: selectedLoveLanguage),
+        ],
+      ),
+    );
+  }
+
+  Padding personalityMBT() {
+    return Padding(
+      padding: const EdgeInsets.all(8.0),
+      child: Column(
+        children: <Widget>[
+          Text(
+            "What’s your personality type?",
+            style: TextStyle(fontSize: 24),
+          ),
+          Expanded(
+            child: GridView.count(
+              crossAxisCount: 4,
+              children: List.generate(16, (index) {
+                return Center(
+                  child: Text(
+                    enumToString(PersonalityMBTI.values[index]),
+                    style: GoogleFonts.comfortaa(textStyle: kSubtitleStyle),
+                  ), // Replace with your own icons
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Padding questionnaire() {
+    return Padding(
+      padding: EdgeInsets.all(40.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          SizedBox(
+            height: 30,
+          ),
+          Text(
+            "Quick Questionnaire",
+            style: kSubtitleStyle,
+          ),
+          SizedBox(
+            height: 15,
+          ),
+          Column(
+            children: [
+              showCardPrompt(
+                  "You will mostly find me at",
+                  TextFormField(
+                    controller: promptOne,
+                    decoration: const InputDecoration(
+                        border: UnderlineInputBorder(),
+                        labelText: 'Enter your answer'),
+                    validator: (String? value) {
+                      if (value!.isEmpty) return 'Please enter some text';
+                      return null;
+                    },
+                  )),
+              showCardPrompt(
+                  "The one thing you should know about me is",
+                  TextFormField(
+                    controller: promptTwo,
+                    decoration: const InputDecoration(
+                        border: UnderlineInputBorder(),
+                        labelText: 'Enter your answer'),
+                    validator: (String? value) {
+                      if (value!.isEmpty) return 'Please enter some text';
+                      return null;
+                    },
+                  ))
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Container showCardPrompt(String prompt, TextFormField textFormField) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(10, 10, 10, 0),
+      height: 200,
+      width: double.maxFinite,
+      child: Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(15.0),
+        ),
+        margin: EdgeInsets.only(top: 30),
+        elevation: 5,
+        child: Padding(
+          padding: EdgeInsets.symmetric(vertical: 0, horizontal: 30.0),
+          child: Center(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  prompt,
+                  style: TextStyle(
+                    color: Colors.grey[800],
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'Open Sans',
+                    fontSize: 18,
+                  ),
+                ),
+                SizedBox(
+                  height: 20,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+                  child: textFormField,
+                )
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  getGenderFromList(List<bool> selected, List<String> selection) {
+    int indexOfFirstTrue = selected.indexWhere((element) => element == true);
+    return selection[indexOfFirstTrue];
+  }
+}
+
