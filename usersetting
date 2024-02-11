@@ -1,0 +1,479 @@
+import 'dart:io';
+
+import 'package:flutter/cupertino.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_app/bloc/profile/profile_state.dart';
+import 'package:flutter_app/model/candidate.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:fluttertoast/fluttertoast.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
+
+import '../../../bloc/profile/profile_bloc.dart';
+import '../../../bloc/profile/profile_event.dart';
+import '../../../model/CandidateMutable.dart';
+import '../../../utils/candidate_utils.dart';
+import '../../../utils/colors.dart';
+import '../../../utils/size.dart';
+import '../../../utils/utility.dart';
+
+class UserSettings extends StatefulWidget {
+  final Candidate candidate;
+
+  UserSettings(this.candidate);
+
+  @override
+  State<StatefulWidget> createState() => _userSettings(this.candidate);
+}
+
+class _userSettings extends State<UserSettings> with SingleTickerProviderStateMixin {
+  Candidate candidate;
+
+  _userSettings(this.candidate);
+
+  late TextEditingController _textEditingControllerFirstName;
+  late TextEditingController _textEditingControllerSecondName;
+
+  CandidateMutable profile = CandidateMutable(
+      personalityMBTI: "",
+      personalityLoveLanguage: "",
+      firstName: "",
+      dateOfBirth: DateTime.now(),
+      gender: "",
+      genderPreference: "",
+      displayPic: "");
+  DateTime selectedDateOfBirth = DateTime.now();
+  TextEditingController dateOfBirthController = TextEditingController();
+  List<String> personalityMBT = enumValuesToStringList(PersonalityMBTI.values);
+  List<String> loveLanguage = enumValuesToStringList(LoveLanguage.values);
+  List<File?> images = List.generate(6, (_) => null);
+
+  @override
+  void initState() {
+    super.initState();
+    profile = setMutableCandidate(candidate);
+    _textEditingControllerFirstName = TextEditingController(text: "");
+    _textEditingControllerSecondName = TextEditingController(text: "");
+  }
+
+  @override
+  void dispose() {
+    super.dispose();
+  }
+
+  Future<void> _getImage(int index) async {
+    final pickedFile = await ImagePicker().pickImage(source: ImageSource.gallery);
+
+    setState(() {
+      if (pickedFile != null) {
+        images[index] = File(pickedFile.path);
+      } else {
+        print('No image selected.');
+      }
+    });
+  }
+
+  void _removeImage(int index) {
+    setState(() {
+      images[index] = null;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (didPop) {
+          return;
+        }
+        final navigator = Navigator.of(context);
+        bool value = await exitConfirmSave(
+            context,
+            () => {
+                  BlocProvider.of<ProfileBloc>(context)
+                      .add(ProfileUpdateEvent(candidate: profile))
+                });
+        if (value) {
+          navigator.pop();
+        }
+      },
+      child: DefaultTabController(
+        length: 2,
+        child: Scaffold(
+          backgroundColor: Colors.grey[200],
+          appBar: AppBar(
+            title: Text(
+              "Profile Settings",
+              style: TextStyle(
+                  color: Colors.white, fontFamily: "Signatra", fontSize: 50.0),
+            ),
+            bottom: TabBar(
+              tabs: [Tab(child: Text('Edit')), Tab(child: Text('View'))],
+            ),
+            centerTitle: true,
+            backgroundColor: primaryColor,
+          ),
+          body: BlocBuilder<ProfileBloc, ProfileState>(builder: (context, state) {
+            if (state is ProfileSuccessState) {
+              dateOfBirthController.text =
+                  DateFormat('dd/MM/yyyy').format(profile.dateOfBirth);
+              return buildTabBarView();
+            } else if (state is Loading) {
+              return CircularProgressIndicator();
+            } else {
+              return errorWidget(
+                  title: "Something went wrong", message: "Please try again later");
+            }
+          }),
+          bottomSheet: Padding(
+            padding: const EdgeInsets.only(top: sizing8, bottom: sizing16),
+            child: saveButton(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget buildTabBarView() {
+    return TabBarView(
+      children: [
+        editPhoto(),
+        SingleChildScrollView(
+            child: candidateScreen(getMutableCandidate(profile, null))),
+      ],
+    );
+  }
+
+  Widget saveButton() {
+    return Container(
+      width: MediaQuery.of(context).size.width,
+      child: MaterialButton(
+        child: Text('Save'),
+        onPressed: () {
+          showDialog<String>(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) {
+                return AlertDialog(
+                  title: Text("Save Changes?"),
+                  content: Text("Do you want to save your changes ?"),
+                  actions: <Widget>[
+                    TextButton(
+                      onPressed: () {
+                        Fluttertoast.showToast(
+                          msg: "Profile Saved",
+                          toastLength: Toast.LENGTH_LONG,
+                          gravity: ToastGravity.CENTER,
+                          timeInSecForIosWeb: 1,
+                          backgroundColor: Colors.lightGreen,
+                          textColor: Colors.white,
+                          fontSize: 16.0,
+                        );
+
+                        BlocProvider.of<ProfileBloc>(context)
+                            .add(ProfileUpdateEvent(candidate: profile));
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text('Save'),
+                    ),
+                    TextButton(
+                      child: Text("Cancel"),
+                      onPressed: () {},
+                    ),
+                  ],
+                );
+              });
+        },
+      ),
+    );
+  }
+
+  /// TODO - Optimize this but this widget call ordering matters
+  Widget editPhoto() {
+    return ListView(
+      children: <Widget>[
+        ListTile(
+          title: Text('My Photos & Videos'),
+        ),
+        GridView.builder(
+          physics: NeverScrollableScrollPhysics(),
+          shrinkWrap: true,
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+          ),
+          itemCount: 6,
+          itemBuilder: (BuildContext context, int index) {
+            return IconButton(
+              icon:
+                  images[index] != null ? imageFile(index) : Icon(Icons.add_a_photo),
+              onPressed: () {
+                _getImage(index);
+              },
+            );
+          },
+        ),
+        profileItem("First name", profile.firstName, _textEditingControllerFirstName,
+            () => {profile.firstName = _textEditingControllerFirstName.text}),
+        profileItem(
+            "Last name",
+            profile.lastName ?? "-",
+            _textEditingControllerSecondName,
+            () => {profile.lastName = _textEditingControllerSecondName.text}),
+        listOfOptions(
+            "Gender",
+            DropdownButtonFormField(
+              value: profile.gender,
+              items: ['Male', 'Female', 'Non-binary'].map((value) {
+                return DropdownMenuItem(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  profile.gender = value as String;
+                });
+              },
+            )),
+        SizedBox(
+          height: 15,
+        ),
+        dateOfBirth(),
+        SizedBox(
+          height: 15,
+        ),
+        listOfOptions(
+            "Personality MBT",
+            DropdownButtonFormField(
+              value: profile.personalityMBTI,
+              items: personalityMBT.map((value) {
+                return DropdownMenuItem(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  profile.personalityMBTI = value as String;
+                });
+              },
+            )),
+        SizedBox(
+          height: 15,
+        ),
+        listOfOptions(
+            "Personality Love Language",
+            DropdownButtonFormField(
+              value: profile.personalityLoveLanguage,
+              items: loveLanguage.map((value) {
+                return DropdownMenuItem(
+                  value: value,
+                  child: Text(value),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  profile.personalityLoveLanguage = value as String;
+                });
+              },
+            )),
+        SizedBox(
+          height: 100,
+        ),
+      ],
+    );
+  }
+
+  Widget imageFile(int index) {
+    return Stack(
+      children: [
+        Image.file(
+          images[index]!,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+        ),
+        Positioned(
+          top: 0,
+          right: 0,
+          child: GestureDetector(
+            onTap: () => _removeImage(index),
+            child: Container(
+              padding: EdgeInsets.all(4.0),
+              color: Colors.black,
+              child: Icon(
+                Icons.close,
+                color: Colors.white,
+                size: 18.0,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Padding dateOfBirth() {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 0, horizontal: 15.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            "Date of birth",
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          TextFormField(
+            decoration: InputDecoration(
+              suffixIcon: IconButton(
+                onPressed: () {
+                  _openDialog(context);
+                },
+                icon: Icon(Icons.calendar_today),
+              ),
+            ),
+            controller: dateOfBirthController,
+            readOnly: true,
+          )
+        ],
+      ),
+    );
+  }
+
+  void _openDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text("What's your date of birth?"),
+          content: CupertinoDatePicker(
+            mode: CupertinoDatePickerMode.date,
+            initialDateTime: profile.dateOfBirth,
+            maximumDate: DateTime(DateTime.now().year - 18, 1, 1),
+            onDateTimeChanged: (DateTime value) {
+              selectedDateOfBirth = value;
+            },
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: Text("Save"),
+              onPressed: () {
+                profile.dateOfBirth = selectedDateOfBirth;
+                dateOfBirthController.text =
+                    DateFormat('dd/MM/yyyy').format(profile.dateOfBirth);
+                Navigator.of(context).pop(); // Close the dialog
+              },
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(); // Close the dialog
+              },
+              child: Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Padding listOfOptions(String title, Widget preferenceWidget) {
+    return Padding(
+      padding: EdgeInsets.symmetric(vertical: 0, horizontal: 15.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          preferenceWidget
+        ],
+      ),
+    );
+  }
+
+  Widget profileItem(String title, String value,
+      TextEditingController _textEditingController, Function onPressed) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.fromLTRB(15.0, 0, 0, 0),
+            child: Text(
+              title,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+              ),
+            ),
+          ),
+          ListTile(
+            title: Text(value),
+            trailing: IconButton(
+              icon: Icon(Icons.edit),
+              onPressed: () {
+                _showEditDialog(context, title, value, _textEditingController,
+                    () => {onPressed()});
+              },
+            ),
+          )
+        ],
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context, String title, String value,
+      TextEditingController _textEditingController, Function onPressed) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('Edit $title'),
+          content: TextField(
+            controller: _textEditingController,
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z]')),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (_textEditingController.text.trim().isNotEmpty) {
+                  // Update the value when the user presses Save
+                  setState(() {
+                    onPressed();
+                  });
+                  Navigator.of(context).pop();
+                } else {
+                  // Show an error message if the text is empty
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Field cannot be empty'),
+                    ),
+                  );
+                }
+              },
+              child: Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
