@@ -1,0 +1,68 @@
+import 'package:flutter/material.dart';
+import 'package:reorderables/reorderables.dart';
+import 'package:image_picker/image_picker.dart';
+
+class ProfilePicturePage extends StatefulWidget {
+  @override
+  _ProfilePicturePageState createState() => _ProfilePicturePageState();
+}
+
+class _ProfilePicturePageState extends State<ProfilePicturePage> {
+  final List<Image> _images = []; // This holds the list of image widgets
+  final ImagePicker _picker = ImagePicker();
+
+  // Function to pick an image and add it to the _images list
+  Future<void> _addImage() async {
+    final XFile? pickedFile = await _picker.pickImage(source: ImageSource.gallery);
+    if (pickedFile != null) {
+      setState(() {
+        _images.add(Image.file(File(pickedFile.path))); // Add the new image to the list
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    List<Widget> _buildReorderableItems() {
+      return _images.map((image) => Container(
+        key: ValueKey(image),
+        padding: EdgeInsets.all(8.0),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8.0),
+          child: image,
+        ),
+      )).toList();
+    }
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Profile Picture Setup'),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: ReorderableWrap(
+              spacing: 8.0,
+              runSpacing: 4.0,
+              padding: const EdgeInsets.all(8),
+              children: _buildReorderableItems(),
+              onReorder: (int oldIndex, int newIndex) {
+                setState(() {
+                  Image img = _images.removeAt(oldIndex);
+                  _images.insert(newIndex, img);
+                });
+              },
+            ),
+          ),
+          ElevatedButton.icon(
+            icon: Icon(Icons.add),
+            label: Text('Add Image'),
+            onPressed: _addImage,
+          )
+        ],
+      ),
+    );
+  }
+}
+
+void main() => runApp(MaterialApp(home: ProfilePicturePage()));
