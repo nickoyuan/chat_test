@@ -1,0 +1,64 @@
+@override
+Widget build(BuildContext context) {
+  // Calculate the number of placeholders needed
+  int numPlaceholders = max(0, 6 - _images.length); // Assuming you want a maximum of 6 items.
+
+  List<Widget> _buildReorderableItems() {
+    List<Widget> items = _images.map((image) => Container(
+      key: ValueKey(image),
+      padding: EdgeInsets.all(8.0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8.0),
+        child: image,
+      ),
+    )).toList();
+
+    // Add placeholders
+    items.addAll(List.generate(numPlaceholders, (index) => Container(
+      key: ValueKey('placeholder_$index'),
+      padding: EdgeInsets.all(8.0),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black12, // Placeholder color
+          borderRadius: BorderRadius.circular(8.0),
+        ),
+        child: Icon(Icons.photo, color: Colors.black26),
+      ),
+    )));
+
+    // Add the 'add image' button at the end if there's room
+    if (_images.length < 6) {
+      items.add(Container(
+        key: ValueKey('add_button'),
+        padding: EdgeInsets.all(8.0),
+        child: IconButton(
+          icon: Icon(Icons.add_circle, size: 50), // The '+' icon button
+          onPressed: _addImage,
+          color: Colors.blue,
+        ),
+      ));
+    }
+
+    return items;
+  }
+
+  return Scaffold(
+    appBar: AppBar(
+      title: Text('Profile Picture Setup'),
+    ),
+    body: ReorderableWrap(
+      spacing: 8.0,
+      runSpacing: 4.0,
+      padding: const EdgeInsets.all(8),
+      children: _buildReorderableItems(),
+      onReorder: (int oldIndex, int newIndex) {
+        setState(() {
+          if (oldIndex < _images.length && newIndex < _images.length) {
+            Image img = _images.removeAt(oldIndex);
+            _images.insert(newIndex, img);
+          }
+        });
+      },
+    ),
+  );
+}
